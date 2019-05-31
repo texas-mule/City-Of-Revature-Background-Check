@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:apikit="http://www.mulesoft.org/schema/mule/apikit" xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/apikit http://www.mulesoft.org/schema/mule/apikit/current/mule-apikit.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.1.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd">
+    <http:listener-config name="backgroundCheck-httpListenerConfig" host="0.0.0.0" port="8081" doc:name="HTTP Listener Configuration" />
+    <apikit:config name="backgroundCheck-config" raml="backgroundCheck.raml" consoleEnabled="false" doc:name="Router" />
+    <db:generic-config name="Generic_Database_Configuration" url="#[sessionVars.database_url]" doc:name="Generic Database Configuration" driverClassName="org.postgresql.Driver" />
+    <flow name="backgroundCheck-main">
+        <http:listener config-ref="backgroundCheck-httpListenerConfig" path="/api/*" doc:name="HTTP" />
+        <set-session-variable variableName="database_url" value="${database_url}" doc:name="database path" />
+        <set-session-variable variableName="person_name" value="#[message.inboundProperties.'http.uri.params.person_name']" doc:name="set person name" />
+        <apikit:router config-ref="backgroundCheck-config" doc:name="APIkit Router" />
+        <exception-strategy ref="backgroundCheck-apiKitGlobalExceptionMapping" doc:name="Reference Exception Strategy" />
+    </flow>
+    <flow name="backgroundCheck-console">
+        <http:listener config-ref="backgroundCheck-httpListenerConfig" path="/console/*" doc:name="HTTP" />
+        <apikit:console config-ref="backgroundCheck-config" doc:name="APIkit Console" />
+    </flow>
+    <flow name="put:/city/backgroundcheck/criminal/conviction/{person_name}:backgroundCheck-config">
+        <db:insert config-ref="Generic_Database_Configuration" doc:name="Create conviction by person name">
+            <db:parameterized-query><![CDATA[INSERT INTO conviction (person_id, offense_id)
+VALUES(
+(SELECT id from person where name = (:person_name)), 
+(SELECT id from offense where name = (:offense_name))
+);]]></db:parameterized-query>
+            <db:in-param name="person_name" value="#[message.inboundProperties.'http.uri.params'.person_name]" />
+            <db:in-param name="offense_name" value="#[message.inboundProperties.'http.query.params'.offense_name]" />
+        </db:insert>
+        <logger message="Put conviction: between insert and select.   #[payload] ::: #[message.inboundProperties.'http.uri.params'.person_name] ::: #[message.inboundProperties.'http.query.params'.offense_name]" level="INFO" doc:name="Logger" />
+        <db:select config-ref="Generic_Database_Configuration" doc:name="Select conviction inserted">
+            <db:parameterized-query><![CDATA[Select p.name as person, o.name as offense from conviction c
+join person p on p.id = c.person_id
+join offense o on o.id = c.offense_id
+where p.name = (:person_name) 
+and o.name = (:offense_name)]]></db:parameterized-query>
+            <db:in-param name="person_name" value="#[message.inboundProperties.'http.uri.params'.person_name]" />
+            <db:in-param name="offense_name" value="#[message.inboundProperties.'http.query.params'.offense_name]" />
+        </db:select>
+        <logger message="#[payload]" level="INFO" doc:name="Logger" />
+    </flow>
+    <flow name="put:/city/backgroundcheck/education/diploma/{person_name}:backgroundCheck-config">
+        <db:insert config-ref="Generic_Database_Configuration" doc:name="Create conviction by person name">
+            <db:parameterized-query><![CDATA[INSERT INTO diploma (person_id, type_id, subject_id)
+VALUES(
+(SELECT id from person where name = (:person_name)), 
+(SELECT id from diploma_type where name = (:diploma_type)),
+(SELECT id from diploma_subject where name = (:diploma_subject))
+);]]></db:parameterized-query>
+            <db:in-param name="person_name" value="#[message.inboundProperties.'http.uri.params'.person_name]" />
+            <db:in-param name="diploma_type" value="#[message.inboundProperties.'http.query.params'.diploma_type]" />
+            <db:in-param name="diploma_subject" value="#[message.inboundProperties.'http.query.params'.diploma_subject]" />
+        </db:insert>
+        <logger message="Put diploma: between insert and select.   #[payload] ::: #[message.inboundProperties.'http.uri.params'.person_name] ::: #[message.inboundProperties.'http.query.params'.offense_name]" level="INFO" doc:name="Logger" />
+        <db:select config-ref="Generic_Database_Configuration" doc:name="Select diploma inserted">
+            <db:parameterized-query><![CDATA[Select (t.name || ' ' || s.name) as Diploma from person as p
+join diploma as d on d.person_id = p.id
+join diploma_type as t on t.id = d.type_id
+join diploma_subject as s on s.id = d.subject_id
+where p.name = (:person_name);]]></db:parameterized-query>
+            <db:in-param name="person_name" value="#[message.inboundProperties.'http.uri.params'.person_name]" />
+        </db:select>
+    </flow>
+    <flow name="put:/city/backgroundcheck/person/{person_name}:backgroundCheck-config">
+        <db:insert config-ref="Generic_Database_Configuration" doc:name="Create conviction by person name">
+            <db:parameterized-query><![CDATA[INSERT INTO person (name)
+VALUES((:person_name)
+);]]></db:parameterized-query>
+            <db:in-param name="person_name" value="#[message.inboundProperties.'http.uri.params'.person_name]" />
+        </db:insert>
+        <logger message="Put diploma: between insert and select.   #[payload] ::: #[message.inboundProperties.'http.uri.params'.person_name] ::: #[message.inboundProperties.'http.query.params'.offense_name]" level="INFO" doc:name="Logger" />
+        <db:select config-ref="Generic_Database_Configuration" doc:name="Select diploma inserted">
+            <db:parameterized-query><![CDATA[Select name from person
+where name = (:person_name);]]></db:parameterized-query>
+            <db:in-param name="person_name" value="#[message.inboundProperties.'http.uri.params'.person_name]" />
+        </db:select>
+    </flow>
+    <flow name="get:/city/backgroundcheck/criminal/conviction/{person_name}:backgroundCheck-config">
+        <logger message="#[message.inboundProperties.'http.uri.params'.person_name]" level="INFO" doc:name="Logger" />
+        <db:select config-ref="Generic_Database_Configuration" doc:name="Select convictions of person">
+            <db:parameterized-query><![CDATA[Select p.name as person, o.name as offense from conviction c
+join person p on p.id = c.person_id
+join offense o on o.id = c.offense_id
+where p.name = (:person_name)
+order by o.name]]></db:parameterized-query>
+            <db:in-param name="person_name" value="#[message.inboundProperties.'http.uri.params'.person_name]" />
+        </db:select>
+    </flow>
+    <flow name="get:/city/backgroundcheck/education/diploma/{person_name}:backgroundCheck-config">
+        <logger message="#[message.inboundProperties.'http.uri.params'.person_name]" level="INFO" doc:name="Logger" />
+        <db:select config-ref="Generic_Database_Configuration" doc:name="Select all diplomas of gradute">
+            <db:parameterized-query><![CDATA[Select (t.name || ' ' || s.name) as Diploma from person as p
+join diploma as d on d.person_id = p.id
+join diploma_type as t on t.id = d.type_id
+join diploma_subject as s on s.id = d.subject_id
+where p.name = (:person_name)
+order by t.name, s.name;]]></db:parameterized-query>
+            <db:in-param name="person_name" value="#[message.inboundProperties.'http.uri.params'.person_name]" />
+        </db:select>
+        <logger message="#[payload]" level="INFO" doc:name="Logger" />
+    </flow>
+    <flow name="get:/city/backgroundcheck/person:backgroundCheck-config">
+        <logger message="Select all person names" level="INFO" doc:name="Logger" />
+        <db:select config-ref="Generic_Database_Configuration" doc:name="Select all person names">
+            <db:parameterized-query><![CDATA[Select name from person
+order by name]]></db:parameterized-query>
+        </db:select>
+    </flow>
+    <flow name="get:/city/backgroundcheck/person/{person_name}:backgroundCheck-config">
+
+        <db:select config-ref="Generic_Database_Configuration" doc:name="Select convictions of person">
+            <db:parameterized-query><![CDATA[Select p.name as person, o.name as offense from conviction c
+join person p on p.id = c.person_id
+join offense o on o.id = c.offense_id
+where p.name = (:person_name)
+order by o.name]]></db:parameterized-query>
+            <db:in-param name="person_name" value="#[message.inboundProperties.'http.uri.params'.person_name]" />
+        </db:select>
+        <logger message="#[payload]" level="INFO" doc:name="Logger" />
+        <set-session-variable variableName="convictions" value="#[payload]" doc:name="Session Variable" />
+        <db:select config-ref="Generic_Database_Configuration" doc:name="Select all diplomas of gradute">
+            <db:parameterized-query><![CDATA[Select (t.name || ' ' || s.name) as Diploma from person as p
+join diploma as d on d.person_id = p.id
+join diploma_type as t on t.id = d.type_id
+join diploma_subject as s on s.id = d.subject_id
+where p.name = (:person_name)
+order by t.name, s.name;]]></db:parameterized-query>
+            <db:in-param name="person_name" value="#[message.inboundProperties.'http.uri.params'.person_name]" />
+        </db:select>
+        <logger message="#[payload]" level="INFO" doc:name="Copy_of_Logger" />
+        <set-session-variable variableName="diplomas" value="#[payload]" doc:name="Session Variable" />
+        <set-payload value="#[sessionVars.convictions]  #[sessionVars.diplomas]" doc:name="Set Payload" />
+    </flow>
+    <apikit:mapping-exception-strategy name="backgroundCheck-apiKitGlobalExceptionMapping">
+        <apikit:mapping statusCode="404">
+            <apikit:exception value="org.mule.module.apikit.exception.NotFoundException" />
+            <set-property propertyName="Content-Type" value="application/json" doc:name="Property" />
+            <set-payload value="{ &quot;message&quot;: &quot;Resource not found&quot; }" doc:name="Set Payload" />
+        </apikit:mapping>
+        <apikit:mapping statusCode="405">
+            <apikit:exception value="org.mule.module.apikit.exception.MethodNotAllowedException" />
+            <set-property propertyName="Content-Type" value="application/json" doc:name="Property" />
+            <set-payload value="{ &quot;message&quot;: &quot;Method not allowed&quot; }" doc:name="Set Payload" />
+        </apikit:mapping>
+        <apikit:mapping statusCode="415">
+            <apikit:exception value="org.mule.module.apikit.exception.UnsupportedMediaTypeException" />
+            <set-property propertyName="Content-Type" value="application/json" doc:name="Property" />
+            <set-payload value="{ &quot;message&quot;: &quot;Unsupported media type&quot; }" doc:name="Set Payload" />
+        </apikit:mapping>
+        <apikit:mapping statusCode="406">
+            <apikit:exception value="org.mule.module.apikit.exception.NotAcceptableException" />
+            <set-property propertyName="Content-Type" value="application/json" doc:name="Property" />
+            <set-payload value="{ &quot;message&quot;: &quot;Not acceptable&quot; }" doc:name="Set Payload" />
+        </apikit:mapping>
+        <apikit:mapping statusCode="400">
+            <apikit:exception value="org.mule.module.apikit.exception.BadRequestException" />
+            <set-property propertyName="Content-Type" value="application/json" doc:name="Property" />
+            <set-payload value="{ &quot;message&quot;: &quot;Bad request&quot; }" doc:name="Set Payload" />
+        </apikit:mapping>
+    </apikit:mapping-exception-strategy>
+</mule>
